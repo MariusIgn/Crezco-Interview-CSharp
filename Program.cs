@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Http.HttpResults;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -25,16 +25,10 @@ HttpClient sharedClient = new()
     BaseAddress = new Uri("http://ip-api.com/json/"),
 };
 
-
 var IpDataCache = new List<IpData>();
 var IpV4Regex = "^([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})$";
 var IpV6Regex = "(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))";
 
-// Use controllers
-// builder.Services.AddControllers();
-//app.MapControllers();
-
-// Use minimal APIs
 app.MapGet("/minimal-api{ip}", (string ip) =>
 {
     ip = ip.Trim();
@@ -44,27 +38,32 @@ app.MapGet("/minimal-api{ip}", (string ip) =>
     }
     var responce = sharedClient.GetAsync(ip).Result;
 
-    var data = System.Text.Json.JsonSerializer.Deserialize<IpData>(responce.Content.ReadAsStream());
-    IpDataCache.Add(data);
-    return Results.Ok(data);
+    var data = JsonSerializer.Deserialize<IpData>(responce.Content.ReadAsStream());
 
+    if (data == null)
+    {
+        return Results.StatusCode(500);
+    }
+
+    IpDataCache.Add(data);
+
+    return Results.Ok(data);
 });
 
 app.MapGet("/report", () =>
 {
-    var Data = new Dictionary<string, int>();
-
-
-    var result = IpDataCache.GroupBy(ip => ip.country).Select(g => (g.Key, g.Count()));
-
-
-    return Results.Ok(result);
-
+    var result = IpDataCache.GroupBy(ip => ip.country).Select(g => (g.Key, g.Count())).ToDictionary();
+    if (result.Count == 0)
+    {
+        return Results.NoContent();
+    }
+    else
+    {
+        return Results.Ok(result);
+    }
 });
 
-
 app.Run();
-
 
 public class IpData
 {
